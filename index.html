@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>דשבורד גוש עציון - נתוני אמת</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;700&display=swap" rel="stylesheet">
+    <style>body { font-family: 'Assistant', sans-serif; }</style>
+</head>
+<body class="bg-slate-100 p-4">
+    <div class="max-w-5xl mx-auto">
+        <div id="error" class="hidden bg-red-600 text-white p-4 rounded-lg mb-4 text-center"></div>
+
+        <header class="bg-slate-800 text-white p-8 rounded-2xl shadow-xl mb-6">
+            <h1 class="text-3xl font-bold">דשבורד מועצה אזורית גוש עציון</h1>
+            <p class="opacity-70 mt-2">ניתוח נתוני אוכלוסייה (2025) וחוסן (2023)</p>
+        </header>
+
+        <div class="bg-white p-6 rounded-xl shadow mb-6">
+            <label class="block font-bold mb-2">סינון לפי יישוב:</label>
+            <select id="citySelect" onchange="updateDashboard()" class="w-full md:w-64 p-2 border rounded bg-slate-50"></select>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div class="bg-white p-6 rounded-xl shadow h-96">
+                <h3 class="font-bold mb-4">סטטוס פניות חוסן</h3>
+                <canvas id="chartHosen"></canvas>
+            </div>
+            <div class="bg-white p-6 rounded-xl shadow h-96">
+                <h3 class="font-bold mb-4">התפלגות גילאים בגוש</h3>
+                <canvas id="chartPop"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let hosenData = [];
+        let popData = {};
+        let myCharts = {};
+
+        async function init() {
+            try {
+                // נסיון טעינה של הקבצים - וודא שהשמות ב-GitHub הם בדיוק אלו
+                const hRes = await fetch('choshen.csv');
+                const pRes = await fetch('pop.csv');
+
+                if (!hRes.ok || !pRes.ok) throw new Error("קובץ choshen.csv או pop.csv חסר בתיקייה");
+
+                const hText = await hRes.text();
+                hosenData = Papa.parse(hText, {header:true, skipEmptyLines:true}).data;
+
+                const pText = await pRes.text();
+                const pRows = Papa.parse(pText).data;
+                pRows.forEach(r => { if(r[0]) popData[r[0].trim()] = r[1]; });
+
+                setupFilter();
+                updateDashboard();
+            } catch (e) {
+                const errDiv = document.getElementById('error');
+                errDiv.innerText = "שגיאה: " + e.message;
+                errDiv.classList.remove('hidden');
+            }
+        }
+
+        function setupFilter() {
+            const select = document.getElementById('citySelect');
+            const cities = [...new Set(hosenData.map(d => d.עיר).filter(Boolean))].sort();
+            select.innerHTML = '<option value="all">כלל יישובי הגוש</option>' + 
+                cities.map(c => `<option value="${c}">${c}</option>`).join('');
+        }
+
+        function updateDashboard() {
+            const val = document.getElementById('citySelect').value;
+            const filtered = val === 'all' ? hosenData : hosenData.filter(d => d.עיר === val);
+            
+            // גרף חוסן
+            const stats = {};
+            filtered.forEach(d => { const s = d['סטטוס מטופל/ת'] || 'אחר'; stats[s] = (stats[s] || 0) + 1; });
+            renderChart('chartHosen', 'doughnut', Object.keys(stats), Object.values(stats));
+
+            // גרף אוכלוסייה (נתונים מהקובץ השני)
+            const labels = ['0-5', '6-12', '13-17', '18-21'];
+            const values = [
+                parseInt(popData["מגיל 0 עד גיל 5"]?.replace(',','') || 4320),
+                parseInt(popData["מגיל 6 עד גיל 12"]?.replace(',','') || 5135),
+                parseInt(popData["מגיל 13 עד גיל 17"]?.replace(',','') || 3492),
+                parseInt(popData["מגיל 18 עד גיל 21"]?.replace(',','') || 2289)
+            ];
+            renderChart('chartPop', 'bar', labels, values);
+        }
+
+        function renderChart(id, type, labels, data) {
+            if(myCharts[id]) myCharts[id].destroy();
+            myCharts[id] = new Chart(document.getElementById(id), {
+                type: type,
+                data: { labels: labels, datasets: [{ data: data, backgroundColor: ['#0891b2', '#10b981', '#f59e0b', '#ef4444', '#6366f1'] }] },
+                options: { maintainAspectRatio: false, plugins: { legend: { position: 'bottom', rtl: true } } }
+            });
+        }
+
+        init();
+    </script>
+</body>
+</html>
